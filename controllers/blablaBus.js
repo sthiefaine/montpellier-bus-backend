@@ -12,7 +12,6 @@ const getBusDepartures = async (req, res) => {
     const frenchOffset = getFrenchTimezoneOffset();
     const effectiveOffset = tzOffset ? parseInt(tzOffset) : frenchOffset;
 
-    // URL du ZIP
     const zipUrl = process.env.BLABLABUS_URL;
     // Télécharger le ZIP
     const response = await axios.get(zipUrl, { responseType: "arraybuffer" });
