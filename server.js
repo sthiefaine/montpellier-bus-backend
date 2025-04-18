@@ -4,9 +4,14 @@ require("dotenv").config();
 
 const routes = require("./routes");
 const { apiLimiter } = require("./middleware/rateLimiter");
+const blablaBusRoutes = require("./routes/blablaBus");
+const { saveNightData, deletePreviousNightData } = require("./controllers/blablaBusNightData");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Configuration du proxy
+app.set('trust proxy', 1);
 
 // Middleware
 app.use(cors());
@@ -15,7 +20,14 @@ app.use(express.json());
 // Protection globale contre les attaques
 app.use("/api", apiLimiter);
 
-// Routes
+// Routes BlaBlaBus spécifiques
+app.use("/api/blablabus", blablaBusRoutes);
+
+// Routes cron
+app.get("/api/cron/save-night-data", saveNightData);
+app.get("/api/cron/delete-night-data", deletePreviousNightData);
+
+// Autres routes
 app.use("/api", routes);
 
 app.get("/", (req, res) => {

@@ -1,11 +1,23 @@
 const axios = require("axios");
 const AdmZip = require("adm-zip");
-const fs = require("fs");
-const path = require("path");
-const { formatDate } = require("../utils/date");
+const { formatDate, getFrenchTimezoneOffset } = require("../utils/date");
+const { put, del } = require("@vercel/blob");
 
 /**
- * Filtre les trajets pour ne garder que ceux entre 23h et 5h59
+ * Vérifie si l'heure actuelle correspond à 21h ou 22h heure française
+ */
+const isCorrectFrenchTime = () => {
+  const now = new Date();
+  const frenchOffset = getFrenchTimezoneOffset();
+  now.setMinutes(now.getMinutes() + frenchOffset);
+
+  const hour = now.getHours();
+
+  return hour === 21 || hour === 22;
+};
+
+/**
+ * Filtre les trajets pour ne garder que ceux qui passent par Montpellier Sabines entre 23h et 5h59
  */
 const filterNightRides = (jsonData) => {
   const filteredData = {
@@ -20,18 +32,31 @@ const filterNightRides = (jsonData) => {
               (journey) => {
                 try {
                   const calls = journey.estimatedCalls?.estimatedCall || [];
-                  for (const call of calls) {
-                    const timeStr =
-                      call.aimedDepartureTime || call.aimedArrivalTime;
-                    if (!timeStr) continue;
+                  let hasMontpellierStop = false;
+                  let isNightTime = false;
 
-                    const time = new Date(formatDate(timeStr));
-                    const hour = time.getHours();
-                    if (hour >= 23 || hour < 6) {
-                      return true;
+                  for (const call of calls) {
+                    // Vérifier si c'est l'arrêt de Montpellier Sabines
+                    const isMontpellierStop = call.stopPointName?.some(
+                      (name) =>
+                        name.value.toLowerCase().includes("montpellier") &&
+                        name.value.toLowerCase().includes("sabine")
+                    );
+
+                    if (isMontpellierStop) {
+                      hasMontpellierStop = true;
+                      // Vérifier l'heure de passage à Montpellier
+                      const timeStr =
+                        call.aimedArrivalTime || call.aimedDepartureTime;
+                      if (timeStr) {
+                        const time = new Date(formatDate(timeStr));
+                        const hour = time.getHours();
+                        isNightTime = hour >= 23 || hour < 6;
+                      }
                     }
                   }
-                  return false;
+
+                  return hasMontpellierStop && isNightTime;
                 } catch (error) {
                   console.error(
                     "Erreur lors du filtrage des trajets de nuit:",
@@ -55,6 +80,13 @@ const filterNightRides = (jsonData) => {
  */
 const saveNightData = async (req, res) => {
   try {
+    // Vérifier si l'heure est correcte en France
+    if (!isCorrectFrenchTime()) {
+      return res.status(400).json({
+        message: "Le job ne peut être exécuté qu'à 21h ou 22h heure française",
+      });
+    }
+
     console.log("Début de la sauvegarde des données de nuit...");
 
     // URL du ZIP
@@ -80,30 +112,27 @@ const saveNightData = async (req, res) => {
       throw new Error("Aucun fichier JSON trouvé dans le ZIP");
     }
 
-    // Filtrer les données pour ne garder que les trajets de nuit
+    // Filtrer les données pour ne garder que les trajets de nuit passant par Montpellier
     const nightData = filterNightRides(jsonData);
 
-    // Créer le dossier data s'il n'existe pas
-    const dataDir = path.join(__dirname, "../data");
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir);
-    }
-
-    // Sauvegarder les données avec la date du jour
+    // Sauvegarder les données dans Vercel Blob
     const today = new Date();
     const fileName = `blablabus_night_${today.getFullYear()}-${(
       today.getMonth() + 1
     )
       .toString()
       .padStart(2, "0")}-${today.getDate().toString().padStart(2, "0")}.json`;
-    const filePath = path.join(dataDir, fileName);
 
-    fs.writeFileSync(filePath, JSON.stringify(nightData, null, 2));
-    console.log(`Données de nuit sauvegardées dans ${filePath}`);
+    const { url } = await put(fileName, JSON.stringify(nightData), {
+      access: "public",
+      contentType: "application/json",
+    });
+
+    console.log(`Données de nuit sauvegardées avec succès: ${url}`);
 
     res.json({
       message: "Données de nuit sauvegardées avec succès",
-      file: fileName,
+      url: url,
     });
   } catch (error) {
     console.error("Erreur lors de la sauvegarde des données de nuit:", error);
@@ -114,6 +143,43 @@ const saveNightData = async (req, res) => {
   }
 };
 
+/**
+ * Supprime les données de nuit de la veille
+ */
+const deletePreviousNightData = async (req, res) => {
+  try {
+    console.log("Début de la suppression des données de nuit...");
+
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const fileName = `blablabus_night_${yesterday.getFullYear()}-${(
+      yesterday.getMonth() + 1
+    )
+      .toString()
+      .padStart(2, "0")}-${yesterday
+      .getDate()
+      .toString()
+      .padStart(2, "0")}.json`;
+
+    await del(fileName);
+    console.log(`Données supprimées avec succès: ${fileName}`);
+
+    res.json({
+      message: "Données de nuit supprimées avec succès",
+      fileName: fileName,
+    });
+  } catch (error) {
+    console.error("Erreur lors de la suppression des données de nuit:", error);
+    res.status(500).json({
+      message: "Erreur lors de la suppression des données",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   saveNightData,
+  deletePreviousNightData,
 };

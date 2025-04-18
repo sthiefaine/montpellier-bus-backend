@@ -1,4 +1,5 @@
 {
+  "regions": ["cdg1"],
   "version": 2,
   "builds": [
     {
@@ -14,8 +15,12 @@
   ],
   "crons": [
     {
-      "path": "/api/blablabus/save-night-data",
-      "schedule": "58 23 * * *"
+      "path": "/api/cron/save-night-data",
+      "schedule": "58 21,22 * * *"
+    },
+    {
+      "path": "/api/cron/delete-night-data",
+      "schedule": "00 21 * * *"
     }
   ]
 }
