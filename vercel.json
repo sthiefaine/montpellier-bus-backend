@@ -11,5 +11,11 @@
       "src": "/(.*)",
       "dest": "server.js"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/blablabus/save-night-data",
+      "schedule": "58 23 * * *"
+    }
   ]
 }

@@ -2,7 +2,7 @@ const axios = require("axios");
 
 let cache = {
   data: null,
-  lastUpdate: null
+  lastUpdate: null,
 };
 
 const CACHE_DURATION = 60 * 1000;
@@ -13,15 +13,13 @@ const CACHE_DURATION = 60 * 1000;
  * @param {string} to - Station d'arrivée
  * @returns {boolean}
  */
-const isCacheValid = (from, to) => {
+const isCacheValid = () => {
   if (!cache.data || !cache.lastUpdate) return false;
-  
+
   const now = Date.now();
   const cacheAge = now - cache.lastUpdate;
-  
-  return (
-    cacheAge < CACHE_DURATION
-  );
+
+  return cacheAge < CACHE_DURATION;
 };
 
 /**
@@ -30,17 +28,17 @@ const isCacheValid = (from, to) => {
 const fetchFlixBusData = async (from, to) => {
   const apiUrl = `https://global.api.flixbus.com/gis/v2/timetable/${process.env.FLIXBUS_STATION_ID}/departures?from=${from}&to=${to}&apiKey=${process.env.FLIXBUS_API_KEY}`;
   const response = await axios.get(apiUrl);
-  
+
   // Mise à jour du cache
   cache = {
     data: {
       from,
       to,
-      ...response.data
+      ...response.data,
     },
-    lastUpdate: Date.now()
+    lastUpdate: Date.now(),
   };
-  
+
   return response.data;
 };
 
@@ -52,7 +50,7 @@ const getBusDepartures = async (req, res) => {
     const { from, to } = req.query;
 
     // Vérification du cache
-    if (isCacheValid(from, to)) {
+    if (isCacheValid()) {
       console.log("Utilisation des données en cache");
       return res.json(cache.data);
     }
