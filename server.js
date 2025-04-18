@@ -4,6 +4,7 @@ require("dotenv").config();
 
 const routes = require("./routes");
 const { apiLimiter } = require("./middleware/rateLimiter");
+const blablaBusRoutes = require("./routes/blablaBus");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -15,7 +16,10 @@ app.use(express.json());
 // Protection globale contre les attaques
 app.use("/api", apiLimiter);
 
-// Routes
+// Routes BlaBlaBus spécifiques
+app.use("/api/blablabus", blablaBusRoutes);
+
+// Autres routes
 app.use("/api", routes);
 
 app.get("/", (req, res) => {

@@ -1,8 +1,20 @@
 const axios = require("axios");
 const AdmZip = require("adm-zip");
 const { formatDate, getFrenchTimezoneOffset } = require("../utils/date");
-const fs = require("fs");
-const path = require("path");
+const { head, list } = require('@vercel/blob');
+
+/**
+ * Liste tous les fichiers Blob disponibles
+ */
+const listBlobFiles = async () => {
+  try {
+    const { blobs } = await list();
+    return blobs.map(blob => blob.url);
+  } catch (error) {
+    console.error("Erreur lors de la liste des fichiers:", error);
+    return [];
+  }
+};
 
 // Structure de cache
 let cache = {
@@ -30,33 +42,21 @@ const isCacheValid = () => {
 /**
  * Récupère les données de nuit sauvegardées
  */
-const getNightData = () => {
+const getNightData = async () => {
   try {
-    const dataDir = path.join(__dirname, "../data");
-    if (!fs.existsSync(dataDir)) {
-      return null;
-    }
-
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    const fileName = `blablabus_night_${yesterday.getFullYear()}-${(
-      yesterday.getMonth() + 1
-    )
-      .toString()
-      .padStart(2, "0")}-${yesterday
-      .getDate()
-      .toString()
-      .padStart(2, "0")}.json`;
-    const filePath = path.join(dataDir, fileName);
-
-    if (fs.existsSync(filePath)) {
-      const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const { blobs } = await list();
+    if (blobs.length > 0) {
+      const response = await fetch(blobs[0].downloadUrl);
+      const data = await response.json();
       return data;
     }
+    console.log("Aucune donnée de nuit trouvée");
     return null;
   } catch (error) {
+    if (error.name === 'BlobNotFoundError') {
+      console.log("Aucune donnée de nuit trouvée");
+      return null;
+    }
     console.error("Erreur lors de la lecture des données de nuit:", error);
     return null;
   }
@@ -101,8 +101,17 @@ const getBusDepartures = async (req, res) => {
         throw new Error("Aucun fichier JSON trouvé dans le ZIP");
       }
 
-      // Récupérer les données de nuit si nécessaire
-      const nightData = getNightData();
+      // Récupérer les données de nuit de la veille si elles existent
+      let nightData = null;
+      try {
+        nightData = await getNightData();
+        if (nightData) {
+          console.log("Données de nuit récupérées avec succès");
+        }
+      } catch (error) {
+        console.log("Pas de données de nuit disponibles:", error.message);
+      }
+
       if (nightData) {
         console.log("Fusion des données de jour et de nuit");
         // Fusionner les données de nuit avec les données du jour
@@ -118,10 +127,9 @@ const getBusDepartures = async (req, res) => {
           const filteredJourneys = frame.estimatedVehicleJourney.filter(
             (journey) =>
               journey.estimatedCalls?.estimatedCall?.some((call) =>
-                call.stopPointName?.some(
-                  (name) =>
-                    name.value.toLowerCase().includes("montpellier") &&
-                    name.value.toLowerCase().includes("sabine")
+                call.stopPointName?.estimatedCall?.some((name) =>
+                  name.value.toLowerCase().includes("montpellier") &&
+                  name.value.toLowerCase().includes("sabine")
                 )
               )
           );
